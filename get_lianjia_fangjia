@@ -1,0 +1,119 @@
+import json
+import requests
+import time
+from lxml import etree
+from fake_useragent import UserAgent
+import pandas as pd
+import urllib
+
+ua = UserAgent()
+
+city_list_2 = {'bj':'110000'}
+
+city_list = {'bj':'110000',
+             'sh':'310000',
+             'gz':'440100',
+             'sz':'440300'
+             }
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36',
+}
+Recruitments = []
+
+
+def parse_page(url):
+    HEADERS = {
+        'User-Agent': ua.random
+    }
+
+    resp = requests.get(url, HEADERS)
+
+    print(resp.status_code)
+    print(resp.text)
+
+    return resp.text
+
+
+def spider():
+
+    gd_city_df = pd.read_csv(r'D:\data2\lbs\AMap_adcode_citycode.xlsx\AMap_adcode_citycode.csv')
+
+    base_urls1 = 'https://{}.lianjia.com/fangjia/priceTrend/?region=city&region_id={}&analysis=1'
+
+    base_urls2 = 'https://{}.lianjia.com/fangjia/priceTrend/?region=city&region_id={}'
+
+    result_daikan_dict = {}
+    result_fangjia_dict = {}
+
+    # for x in range(1, len(gd_city_df)):
+    for x in range(1, 10):
+        adcode = gd_city_df.iloc[x]['adcode']
+        citycode = gd_city_df.iloc[x]['citycode']
+        name = gd_city_df.iloc[x]['中文名']
+
+        # if not int(adcode) % 10000 == 0:
+        #     continue
+
+        if not int(adcode) % 100 == 0:
+            continue
+
+        print(x)
+
+        page_url = base_urls1.format('bj', adcode)
+
+        page_url2 = base_urls2.format('bj', adcode)
+
+        print(page_url)
+
+        result_daikan = parse_page(page_url)
+
+        time.sleep(5)
+
+        result_fangjia = parse_page(page_url2)
+
+        time.sleep(5)
+
+        result_daikan_dict[name] = result_daikan
+
+        result_fangjia_dict[name] = result_fangjia
+
+        print('%s爬取完成' % name)
+
+    return result_daikan_dict, result_fangjia_dict
+
+
+def main():
+    daikan, fangjia = spider()
+    return daikan, fangjia
+
+
+# if __name__ == '__main__':
+daikan, fangjia = main()
+
+daikan_json_dict = {}
+fangjia_json_dict = {}
+
+total = 0
+
+for x in daikan.keys():
+    json_tmp = json.loads(daikan[x])
+    daikan_json_dict[x] = json_tmp
+
+    for x in fangjia.keys():
+        json_tmp = json.loads(fangjia[x])
+        fangjia_json_dict[x] = json_tmp
+    # total += len(json_tmp['list'])
+
+# for x in range(len(fuck)):
+#     df_tmp = pd.DataFrame.from_dict(fuck[x], orient= 'index',columns=[x])
+#     # df_tmp = pd.DataFrame.from_dict(fuck[x], orient='columns')
+#     # df_tmp[0].name = x
+#     # print(df_tmp)
+#     fuck_list.append(df_tmp)
+#
+# fuck_out = pd.concat(fuck_list, axis = 1)
+#
+# fuck_out_tr = fuck_out.transpose()
+#
+# fuck_out_tr.to_csv(r'D:\pycharm_project\thermal_time_series\51job_csv_1-9.csv', encoding = 'gbk')
