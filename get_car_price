@@ -1,0 +1,195 @@
+from selenium import webdriver
+import time
+from bs4 import BeautifulSoup
+import pandas as pd
+import json
+from lxml import etree
+from fake_useragent import UserAgent
+import requests
+import demjson
+
+ua = UserAgent()
+
+def parse_page(url):
+
+    HEADERS = {
+        'User-Agent': ua.random
+    }
+
+    resp = requests.get(url,HEADERS)
+
+    print(resp.status_code)
+    # print(resp.text)
+
+    # text = resp.content.decode('gbk')
+
+    text = resp.text
+
+    print(text)
+
+    tree = etree.HTML(text)
+
+    t = etree.tostring(tree, pretty_print=True, encoding='utf-8')
+
+    return text
+
+def get_bid_sid_specid():
+    brand_dict = {}
+
+    brand_text = parse_page('https://www.che168.com/Handler/ScriptCarList_V1.ashx?needData=1')
+    brand_text_extract = eval(brand_text.split(';')[1].split('=')[1]).split(',')
+
+    for x in range(len(brand_text_extract)-1):
+        if x%2 == 0:
+            brand_dict[brand_text_extract[x+1].split(' ')[1]] = brand_text_extract[x]
+
+    series_dict_entire = {}
+    spec_dict_entire = {}
+
+    for key,value in brand_dict.items():
+        print(key)
+
+        series_dict = {}
+
+        series_text = parse_page('https://www.che168.com/Handler/ScriptCarList_V1.ashx?seriesGroupType=2&needData=2&bid={}'.format(value))
+        print(parse_page)
+        time.sleep(0.5)
+        series_text_extract = eval(series_text.split(';')[1].split('=')[1]).split(',')
+
+        for x in range(len(series_text_extract) - 1):
+            if x % 2 == 0:
+                series_dict[series_text_extract[x + 1].split(' ')[1]] = series_text_extract[x]
+                spec_text = parse_page('https://www.che168.com/Handler/ScriptCarList_V1.ashx?seriesGroupType=2&needData=3&seriesid={}'.format(series_text_extract[x]))
+                time.sleep(0.5)
+                spec_tmp = demjson.decode(spec_text)
+
+                spec_dict = {}
+
+                for y in range(len(spec_tmp)):
+                    spec_tmp_2 = spec_tmp[y]
+                    for z in range(len(spec_tmp_2['spec'])):
+                        spec_dict[spec_tmp_2['spec'][z]['id']] = spec_tmp_2['spec'][z]['name']
+
+                spec_dict_entire[series_text_extract[x]] = spec_dict
+
+        if not value in series_dict_entire:
+            series_dict_entire[value] = series_dict
+    return brand_dict, series_dict_entire, spec_dict_entire
+
+
+def web_getprice(input_browser, input_brand, input_series, input_spec, input_year, input_month, input_mileage):
+
+    browser = input_browser
+
+    browser.get('https://www.che168.com/servicehall/#pvareaid=104332')
+
+    button1 = browser.find_element_by_xpath('/html/body/div[4]/div[1]/ul/li[2]/a')
+    button1.click()
+    time.sleep(0.2)
+
+    js1="document.getElementById(\"div_car\").setAttribute(\"bid\",{});" \
+       "document.getElementById(\"div_car\").setAttribute(\"sid\",{});" \
+       "document.getElementById(\"div_car\").setAttribute(\"spid\",{});" \
+       "document.getElementById(\"span_registerDate\").setAttribute(\"year\",{});" \
+       "document.getElementById(\"span_registerDate\").setAttribute(\"month\",{});" \
+       "document.getElementById(\"span_city1\").setAttribute(\"pid\",440000);" \
+       "document.getElementById(\"span_city1\").setAttribute(\"cid\",440300);" \
+       "document.getElementById(\"span_city1\").innerHTML=\"深圳\";" \
+       "document.getElementById(\"txt_mileage\").setAttribute(\"placeholder\",1);" \
+       "document.getElementById(\"txt_mileage\").setAttribute(\"data-placeholder\",2);".format(input_brand, input_series, input_spec, input_year, input_month)
+
+    browser.execute_script(js1)
+
+    # js2 ="document.getElementsByClassName(\"select-selected select-selected2 div_city\")[1].setAttribute(\"class\",\"select-selected select-selected2 div_city active\");"
+    # browser.execute_script(js2)
+
+    mileage_div = browser.find_element_by_xpath('/html/body/div[10]/div/div/dl/dd[4]/div/input')
+    mileage_div.send_keys(input_mileage)
+
+    select_button = browser.find_element_by_xpath('/html/body/div[10]/div/div/dl/dd[3]/div/div[1]')
+    select_button.click()
+
+    province_button = browser.find_element_by_xpath('/html/body/div[10]/div/div/dl/dd[3]/div/div[2]/div/div[1]/div/div/dl/dd/dl/dd[5]/a')
+    province_button.click()
+
+    city_button = browser.find_element_by_xpath('/html/body/div[10]/div/div/dl/dd[3]/div/div[2]/div/div[2]/div/div/dl/dd/dl/dd[15]/a')
+    city_button.click()
+
+    button3 = browser.find_element_by_xpath('/html/body/div[10]/div/div/div/a')
+    button3.click()
+
+    time.sleep(0.5)
+
+    car_state_button = browser.find_element_by_xpath('/html/body/div[3]/div[2]/div[1]/div[2]/div[1]/div[2]/div[2]/div/span[2]')
+    car_state_button.click()
+
+    car_price = -1
+
+    car_price = browser.find_element_by_xpath('/html/body/div[3]/div[2]/div[1]/div[2]/div[1]/div[1]/div/div/p/em').get_attribute('innerHTML')
+
+    return car_price
+
+if __name__ == '__main__':
+    bid_df = pd.read_csv(r'D:\data2\lbs\car_price\brand_df.csv')
+    sid_df = pd.read_csv(r'D:\data2\lbs\car_price\series_df.csv')
+    spec_df = pd.read_csv(r'D:\data2\lbs\car_price\spec_df.csv')
+
+    chrome_opts = webdriver.ChromeOptions()
+    chrome_opts.add_argument("--headless")
+
+    browser = webdriver.Chrome(chrome_options=chrome_opts)
+
+    f_suc = open(r'D:\data2\lbs\car_price\car_price_201906_3.csv', 'a+')
+
+    f_loss = open(r'D:\data2\lbs\car_price\car_price_201906_3_loss.csv', 'w+')
+
+    history_df = pd.read_csv(r'D:\data2\lbs\car_price\car_price_201906_3.csv', encoding = 'gbk', header = None)
+
+    # brand = 33
+    # series = 3170
+    # spec = 42420
+
+    register_year = 2019
+    register_month = 6
+
+    mileage = 3
+
+    for x in sid_df.columns:
+        l = ''
+        if x != 'Unnamed: 0':
+            sid_tmp = sid_df[x].dropna().astype(int)
+            for y in range(len(sid_tmp)):
+                spec_name_df = spec_df[str(sid_tmp.iloc[y])].dropna()
+                spec_id_df = spec_df.loc[spec_name_df.index,'Unnamed: 0']
+
+                for z in range(len(spec_id_df)):
+                    spec_id = spec_id_df.iloc[z]
+
+                    if len(history_df[history_df[2] == spec_id]) != 0:
+                        continue
+
+                    try:
+                        car_price = web_getprice(input_browser = browser,input_brand = int(x),input_series = int(sid_tmp.iloc[y]),input_spec = int(spec_id),
+                                                input_year = register_year,input_month = register_month,input_mileage = mileage)
+
+                        l = str(x) + ',' + str(int(sid_tmp.iloc[y])) + ',' + str(int(spec_id)) + ',' + str(
+                            register_year) + ',' + str(register_month) + ',' + str(mileage) + ',' + str(
+                            car_price) + '\n'
+                        f_suc.write(l)
+                        f_suc.flush()
+
+                    except:
+                        l_loss = str(x) + ',' + str(int(sid_tmp.iloc[y])) + ',' + str(int(spec_id)) + ',' + str(
+                            register_year) + ',' + str(register_month) + ',' + str(mileage) + '\n'
+                        f_loss.write(l_loss)
+                        f_loss.flush()
+
+                        continue
+
+    f_suc.flush()
+    f_suc.close()
+
+    f_loss.flush()
+    f_loss.close()
+
+    browser.quit()
